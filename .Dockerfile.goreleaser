@@ -1,0 +1,3 @@
+FROM scratch
+COPY iptv-proxy /
+ENTRYPOINT ["/iptv-proxy"]

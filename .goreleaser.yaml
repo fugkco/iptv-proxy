@@ -1,0 +1,65 @@
+project_name: iptv-proxy
+
+builds:
+  - id: iptv-proxy
+    main: ./cmd/iptv-proxy/main.go
+    binary: iptv-proxy
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+
+    goarch:
+      - amd64
+      - arm
+      - arm64
+
+release:
+  github:
+    owner: fugkco
+    name: iptv-proxy
+  draft: false
+
+dockers:
+  - &docker_build
+    goos: linux
+    goarch: amd64
+    binaries:
+      - iptv-proxy
+    builds:
+      - iptv-proxy
+    image_templates:
+      - "ghcr.io/fugkco/iptv-proxy:{{ .Tag }}-amd64"
+      - "ghcr.io/fugkco/iptv-proxy:v{{ .Major }}-amd64"
+      - "ghcr.io/fugkco/iptv-proxy:v{{ .Major }}.{{ .Minor }}-amd64"
+      - "ghcr.io/fugkco/iptv-proxy:latest-amd64"
+
+    skip_push: false
+
+    build_flag_templates:
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.name={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+
+    dockerfile: .Dockerfile.goreleaser
+  - <<: *docker_build
+    goarch: arm
+    goarm: 6
+    image_templates:
+      - "ghcr.io/fugkco/iptv-proxy:{{ .Tag }}-arm32v7"
+      - "ghcr.io/fugkco/iptv-proxy:v{{ .Major }}-arm32v7"
+      - "ghcr.io/fugkco/iptv-proxy:v{{ .Major }}.{{ .Minor }}-arm32v7"
+      - "ghcr.io/fugkco/iptv-proxy:latest-arm32v7"
+
+  - <<: *docker_build
+    goarch: arm64
+    image_templates:
+      - "ghcr.io/fugkco/iptv-proxy:{{ .Tag }}-arm64v8"
+      - "ghcr.io/fugkco/iptv-proxy:v{{ .Major }}-arm64v8"
+      - "ghcr.io/fugkco/iptv-proxy:v{{ .Major }}.{{ .Minor }}-arm64v8"
+      - "ghcr.io/fugkco/iptv-proxy:latest-arm64v8"
+
+# .goreleaser.yml
+checksum:
+  name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
