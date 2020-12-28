@@ -1,3 +1,4 @@
 FROM gcr.io/distroless/static
 COPY iptv-proxy /
+USER nonroot
 ENTRYPOINT ["/iptv-proxy"]
