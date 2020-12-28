@@ -22,7 +22,9 @@ import (
 	"context"
 	"fmt"
 	"github.com/google/logger"
+	"github.com/google/uuid"
 	"github.com/gorilla/mux"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -30,7 +32,13 @@ import (
 	"time"
 )
 
+type key int
+const (
+	requestIDKey key = 0
+)
+
 var log = logger.Init("server", false, false, os.Stdout)
+var httpLog = logger.Init("http", false, false, os.Stdout)
 
 // New initialize a new server configuration
 func New(hostname string, port int64, entries map[string]string) *Server {
@@ -59,9 +67,13 @@ func (s *Server) Serve() {
 	group := r.PathPrefix("/").Subrouter()
 	s.routes(group)
 
+	nextRequestID := func() string {
+		return uuid.New().String()
+	}
+
 	s.srv = &http.Server{
-		Addr:         fmt.Sprintf("%s:%d", s.HostConfig.Hostname, s.HostConfig.Port),
-		Handler:      r,
+		Addr:         fmt.Sprintf(":%d", s.HostConfig.Port),
+		Handler:      tracing(nextRequestID)(logging(r)),
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 	}
@@ -83,6 +95,58 @@ func (s *Server) Serve() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := s.srv.Shutdown(ctx); err != nil {
-		log.Fatalf("failed to shutdown server due to error %s", err)
+		httpLog.Fatalf("failed to shutdown server due to error %s", err)
 	}
+}
+
+func tracing(nextRequestID func() string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requestID := r.Header.Get("X-Request-Id")
+			if requestID == "" {
+				requestID = nextRequestID()
+			}
+			ctx := context.WithValue(r.Context(), requestIDKey, requestID)
+			w.Header().Set("X-Request-Id", requestID)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+func logging(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			requestID, ok := r.Context().Value(requestIDKey).(string)
+			if !ok {
+				requestID = "unknown"
+			}
+
+			username := "-"
+			if r.URL.User != nil {
+				if name := r.URL.User.Username(); name != "" {
+					username = name
+				}
+			}
+
+			host, _, err := net.SplitHostPort(r.RemoteAddr)
+			if err != nil {
+				host = r.RemoteAddr
+			}
+
+			uri := r.RequestURI
+			// Requests using the CONNECT method over HTTP/2.0 must use
+			// the authority field (aka r.Host) to identify the target.
+			// Refer: https://httpwg.github.io/specs/rfc7540.html#CONNECT
+			if r.ProtoMajor == 2 && r.Method == "CONNECT" {
+				uri = r.Host
+			}
+			if uri == "" {
+				uri = r.URL.RequestURI()
+			}
+
+			// todo add statuscode + size, see https://godoc.org/github.com/gorilla/handlers#CombinedLoggingHandler
+			httpLog.Infof(`%s - %s [%s] "%s %s %s"`, host, username, requestID, r.Method, uri, r.Proto)
+		}()
+		next.ServeHTTP(w, r)
+	})
 }

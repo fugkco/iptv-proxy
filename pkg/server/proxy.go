@@ -44,15 +44,9 @@ func stream(w http.ResponseWriter, r *http.Request, oriURL string, hostConfig *H
 		}
 	}()
 
-	// for now
-	name := getVarFromRequest("name", r)
-	uri := getVarFromRequest("uri", r)
-	log.Infof("Client %s connected from %s, requested %s: %s", r.UserAgent(), r.Host, name, decodeUri(uri))
-
 	copyHTTPHeader(w, resp.StatusCode, resp.Header)
 
 	contentType := resp.Header.Get("Content-Type")
-	log.Infof("response content-type: %s", contentType) // for now
 	contentCategory := strings.ToLower(strings.Split(contentType, "/")[0])
 	if contentCategory == "video" {
 		streamBody(w, r, resp.Body, copyProxier())
